@@ -172,17 +172,32 @@ int main(int argc, char **argv)
             if (rank == 0)
             {
                 double total_integral = 0.0;
-                int active_workers = 0, workers_finished = 0;
+                int active_workers = 0;
+
                 Task first = {0.0, 1.0, tol, (1.0 / 6.0) * (f(0.0) + 4.0 * f(0.5) + f(1.0))};
                 push_task(first);
 
-                while (workers_finished < (size - 1))
+                while (active_workers > 0 || stack_top >= 0)
                 {
                     MPI_Status status;
-                    MPI_Probe(MPI_ANY_SOURCE, MPI_ANY_TAG, MPI_COMM_WORLD, &status);
+                    MPI_Recv(NULL, 0, MPI_INT, MPI_ANY_SOURCE, MPI_ANY_TAG, MPI_COMM_WORLD, &status);
                     int worker_id = status.MPI_SOURCE;
 
-                    if (status.MPI_TAG == TAG_RESULT)
+                    if (status.MPI_TAG == TAG_WORK_REQUEST)
+                    {
+                        if (stack_top >= 0)
+                        {
+                            Task t = pop_task();
+                            MPI_Send(&t, 1, task_type, worker_id, TAG_WORK, MPI_COMM_WORLD);
+                            active_workers++;
+                        }
+                        else
+                        {
+
+                            MPI_Send(NULL, 0, MPI_INT, worker_id, TAG_STOP, MPI_COMM_WORLD);
+                        }
+                    }
+                    else if (status.MPI_TAG == TAG_RESULT)
                     {
                         double res;
                         MPI_Recv(&res, 1, MPI_DOUBLE, worker_id, TAG_RESULT, MPI_COMM_WORLD, &status);
@@ -191,26 +206,15 @@ int main(int argc, char **argv)
                     }
                     else if (status.MPI_TAG == TAG_NEW_TASK)
                     {
-                        Task t;
-                        MPI_Recv(&t, 1, task_type, worker_id, TAG_NEW_TASK, MPI_COMM_WORLD, &status);
-                        push_task(t);
+                        Task new_t;
+                        MPI_Recv(&new_t, 1, task_type, worker_id, TAG_NEW_TASK, MPI_COMM_WORLD, &status);
+                        push_task(new_t);
                     }
-                    else if (status.MPI_TAG == TAG_WORK_REQUEST)
-                    {
-                        MPI_Recv(NULL, 0, MPI_INT, worker_id, TAG_WORK_REQUEST, MPI_COMM_WORLD, &status);
-                        if (stack_top >= 0)
-                        {
-                            Task t = pop_task();
-                            MPI_Send(&t, 1, task_type, worker_id, TAG_WORK, MPI_COMM_WORLD);
-                            active_workers++;
-                        }
-                        else if (active_workers == 0)
-                        {
-                            for (int i = 1; i < size; i++)
-                                MPI_Send(NULL, 0, MPI_INT, i, TAG_STOP, MPI_COMM_WORLD);
-                            workers_finished = size - 1;
-                        }
-                    }
+                }
+
+                for (int i = 1; i < size; i++)
+                {
+                    MPI_Send(NULL, 0, MPI_INT, i, TAG_STOP, MPI_COMM_WORLD);
                 }
             }
             else
