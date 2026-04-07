@@ -139,23 +139,6 @@ int main(int argc, char **argv)
     }
     else if (mode == 1)
     {
-
-        int K = size;
-        double h = 1.0 / K;
-        double local_sum = 0.0, global_sum = 0.0;
-        for (int i = rank; i < K; i += size)
-        {
-            double a = i * h, b = (i + 1) * h;
-            double init_est = (h / 6.0) * (f(a) + 4.0 * f((a + b) / 2.0) + f(b));
-            local_sum += adaptive_simpson(f, a, b, tol / K, init_est);
-        }
-        MPI_Reduce(&local_sum, &global_sum, 1, MPI_DOUBLE, MPI_SUM, 0, MPI_COMM_WORLD);
-        if (rank == 0)
-            printf("Mode 1 Result: %e \nTime: %f s\n", global_sum, MPI_Wtime() - start_time);
-    }
-    else if (mode == 2)
-    {
-
         if (rank == 0)
         {
             double total_integral = 0.0;
@@ -218,6 +201,9 @@ int main(int argc, char **argv)
                 process_task(t, f);
             }
         }
+    }
+    else if (mode == 2)
+    {
     }
 
     MPI_Type_free(&task_type);
