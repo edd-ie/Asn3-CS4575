@@ -95,6 +95,30 @@ void process_task(Task t, func_ptr f)
     }
 }
 
+double adaptive_simpson_hybrid(func_ptr f, double a, double b, double tol, double whole)
+{
+    double m = (a + b) / 2.0;
+    double h_half = (m - a) / 6.0;
+    double left_s = h_half * (f(a) + 4.0 * f((a + m) / 2.0) + f(m));
+    double right_s = h_half * (f(m) + 4.0 * f((m + b) / 2.0) + f(b));
+
+    if (fabs(left_s + right_s - whole) <= 15.0 * tol)
+    {
+        return left_s + right_s + (left_s + right_s - whole) / 15.0;
+    }
+
+    double left_res, right_res;
+
+#pragma omp task shared(left_res)
+    left_res = adaptive_simpson_hybrid(f, a, m, tol / 2.0, left_s);
+
+#pragma omp task shared(right_res)
+    right_res = adaptive_simpson_hybrid(f, m, b, tol / 2.0, right_s);
+
+#pragma omp taskwait
+    return left_res + right_res;
+}
+
 int main(int argc, char **argv)
 {
     MPI_Init(&argc, &argv);
