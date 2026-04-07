@@ -180,21 +180,23 @@ int main(int argc, char **argv)
                 while (active_workers > 0 || stack_top >= 0)
                 {
                     MPI_Status status;
-                    MPI_Recv(NULL, 0, MPI_INT, MPI_ANY_SOURCE, MPI_ANY_TAG, MPI_COMM_WORLD, &status);
+                    MPI_Probe(MPI_ANY_SOURCE, MPI_ANY_TAG, MPI_COMM_WORLD, &status);
                     int worker_id = status.MPI_SOURCE;
 
                     if (status.MPI_TAG == TAG_WORK_REQUEST)
                     {
+                        MPI_Recv(NULL, 0, MPI_INT, worker_id, TAG_WORK_REQUEST, MPI_COMM_WORLD, &status);
                         if (stack_top >= 0)
                         {
                             Task t = pop_task();
                             MPI_Send(&t, 1, task_type, worker_id, TAG_WORK, MPI_COMM_WORLD);
                             active_workers++;
                         }
-                        else
+                        else if (active_workers == 0)
                         {
-
-                            MPI_Send(NULL, 0, MPI_INT, worker_id, TAG_STOP, MPI_COMM_WORLD);
+                            for (int i = 1; i < size; i++)
+                                MPI_Send(NULL, 0, MPI_INT, i, TAG_STOP, MPI_COMM_WORLD);
+                            active_workers = size - 1;
                         }
                     }
                     else if (status.MPI_TAG == TAG_RESULT)
