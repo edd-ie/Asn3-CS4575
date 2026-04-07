@@ -76,22 +76,22 @@ void process_task(Task t, func_ptr f)
 {
     double m = (t.a + t.b) / 2.0;
     double h_half = (m - t.a) / 6.0;
-    double left_simpson = h_half * (f(t.a) + 4.0 * f((t.a + m) / 2.0) + f(m));
-    double right_simpson = h_half * (f(m) + 4.0 * f((m + t.b) / 2.0) + f(t.b));
-    double refined = left_simpson + right_simpson;
+    double left_s = h_half * (f(t.a) + 4.0 * f((t.a + m) / 2.0) + f(m));
+    double right_s = h_half * (f(m) + 4.0 * f((m + t.b) / 2.0) + f(t.b));
+    double refined = left_s + right_s;
 
     if (fabs(refined - t.whole) <= 15.0 * t.tol)
     {
         double result = refined + (refined - t.whole) / 15.0;
-        MPI_Send(&result, 1, MPI_DOUBLE, 0, TAG_RESULT, MPI_COMM_WORLD);
+        MPI_Send(&result, 1, MPI_DOUBLE, 0, TAG_RESULT, MPI_COMM_WORLD); // [cite: 11]
     }
     else
     {
-        Task new_task = {m, t.b, t.tol / 2.0, right_simpson};
-        MPI_Send(&new_task, 1, task_type, 0, TAG_NEW_TASK, MPI_COMM_WORLD);
+        Task right_task = {m, t.b, t.tol / 2.0, right_s};
+        MPI_Send(&right_task, 1, task_type, 0, TAG_NEW_TASK, MPI_COMM_WORLD);
 
-        Task local_task = {t.a, m, t.tol / 2.0, left_simpson};
-        process_task(local_task, f);
+        Task left_task = {t.a, m, t.tol / 2.0, left_s};
+        process_task(left_task, f);
     }
 }
 

@@ -2,41 +2,48 @@
 CC = mpicc
 CFLAGS = -fopenmp -Wall -O3
 LIBS = -lm
-MPI = mpirun -np
+MPI = mpirun
 
 # Target executable
 TARGET = integration
 SRC = integration.c
-BUILD = build/src
 
-# Nodes
-func_id = 0
-P = 1
-mode = 0
-tol = 1e-6
+# Variables for quick testing (can be overridden via command line)
+FUNC = 1
+P = 4
+T = 2
+MODE = 2
+TOL = 1e-8
 
-# Default target
 all: $(TARGET)
 
-# Build target
 $(TARGET): $(SRC)
-	$(CC) $(CFLAGS) $(SRC) $(LIBS) -o $(TARGET)
+	$(CC) $(CFLAGS) $(SRC) -o $(TARGET) $(LIBS)
 
-# mpirun -np P integration func_id mode tol 
-# Run target
-run0: $(TARGET)
-	$(MPI) 1 $(TARGET) $(func_id) 0 $(tol)
+# General run command: make run P=4 T=2 MODE=2 FUNC=1 TOL=1e-8
+run: $(TARGET)
+	OMP_NUM_THREADS=$(T) $(MPI) -np $(P) ./$(TARGET) $(FUNC) $(MODE) $(TOL)
 
-run1: $(TARGET)
-	$(MPI) 4 $(TARGET) $(func_id) 1 $(tol)
+# Mode 0: Serial Baseline [cite: 66]
+test-serial: $(TARGET)
+	$(MPI) -np 1 ./$(TARGET) $(FUNC) 0 $(TOL)
 
-run2: $(TARGET)
-	$(MPI) 4 $(TARGET) $(func_id) 2 $(tol)
+# Mode 1: MPI Dynamic (P=4) 
+test-dynamic: $(TARGET)
+	$(MPI) -np 4 ./$(TARGET) $(FUNC) 1 $(TOL)
 
-memcheck: $(TARGET)
-	@echo -e "Verifying RAII cleanup."
-	$(MPI) 1 valgrind --leak-check=full --show-leak-kinds=all -s ./$(TARGET) $(func_id) 0 $(tol)
+# Mode 2: Hybrid (P=2, T=4) 
+test-hybrid: $(TARGET)
+	OMP_NUM_THREADS=4 $(MPI) -np 2 ./$(TARGET) $(FUNC) 2 $(TOL)
 
-# Clean target
+# Performance measurement helper
+experiments: $(TARGET)
+	@echo "Running MPI Dynamic (P=1, 2, 4, 8, 16)..."
+	for p in 1 2 4 8 16 ; do $(MPI) -np $$p ./$(TARGET) $(FUNC) 1 $(TOL) ; done
+	@echo "Running Hybrid (P=2 T=4, P=4 T=2, P=4 T=4)..."
+	OMP_NUM_THREADS=4 $(MPI) -np 2 ./$(TARGET) $(FUNC) 2 $(TOL)
+	OMP_NUM_THREADS=2 $(MPI) -np 4 ./$(TARGET) $(FUNC) 2 $(TOL)
+	OMP_NUM_THREADS=4 $(MPI) -np 4 ./$(TARGET) $(FUNC) 2 $(TOL)
+
 clean:
 	rm -f $(TARGET)
