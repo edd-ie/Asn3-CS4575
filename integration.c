@@ -154,7 +154,7 @@ int main(int argc, char **argv)
 
     double total_time = 0.0;
     int num_runs = 10;
-    double results[10];
+    double results[num_runs];
 
     for (int run = 0; run < num_runs; run++)
     {
@@ -249,8 +249,6 @@ int main(int argc, char **argv)
             double b = (rank + 1) * h;
 
             double init_est = (h / 6.0) * (f(a) + 4.0 * f((a + b) / 2.0) + f(b));
-
-            double start_parallel = MPI_Wtime();
 
 #pragma omp parallel
             {
