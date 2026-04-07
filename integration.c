@@ -228,6 +228,28 @@ int main(int argc, char **argv)
     }
     else if (mode == 2)
     {
+        double local_sum = 0.0, global_sum = 0.0;
+
+        int K = size;
+        double h = 1.0 / K;
+        double a = rank * h;
+        double b = (rank + 1) * h;
+        double init_est = (h / 6.0) * (f(a) + 4.0 * f((a + b) / 2.0) + f(b));
+
+#pragma omp parallel
+        {
+#pragma omp single
+            {
+                local_sum = adaptive_simpson_hybrid(f, a, b, tol / K, init_est);
+            }
+        }
+
+        MPI_Reduce(&local_sum, &global_sum, 1, MPI_DOUBLE, MPI_SUM, 0, MPI_COMM_WORLD);
+
+        if (rank == 0)
+        {
+            printf("Mode 2 Result: %e \nTime: %f s\n", global_sum, MPI_Wtime() - start_time);
+        }
     }
 
     MPI_Type_free(&task_type);
