@@ -8,7 +8,7 @@ typedef struct
 {
     double a;     // Left bound
     double b;     // Right bound
-    double tol;   // tolerance for this interval
+    double tol;   // tolerance for the interval
     double whole; // Simpson estimate for the whole interval [a, b]
 } Task;
 
@@ -166,6 +166,7 @@ int main(int argc, char **argv)
 
             double init_est = (1.0 / 6.0) * (f(0.0) + 4.0 * f(0.5) + f(1.0));
             double result = adaptive_simpson(f, 0.0, 1.0, tol, init_est);
+            printf("Mode 2 Result: %.12f (Tol: %e)\n", result, tol);
         }
         else if (mode == 1)
         {
@@ -218,6 +219,7 @@ int main(int argc, char **argv)
                 {
                     MPI_Send(NULL, 0, MPI_INT, i, TAG_STOP, MPI_COMM_WORLD);
                 }
+                printf("Mode 2 Result: %.12f (Tol: %e)\n", total_integral, tol);
             }
             else
             {
@@ -259,6 +261,11 @@ int main(int argc, char **argv)
             }
 
             MPI_Reduce(&local_sum, &global_sum, 1, MPI_DOUBLE, MPI_SUM, 0, MPI_COMM_WORLD);
+
+            if (rank == 0)
+            {
+                printf("Mode 2 Result: %.12f (Tol: %e)\n", global_sum, tol);
+            }
         }
 
         double end = MPI_Wtime();
