@@ -152,104 +152,120 @@ int main(int argc, char **argv)
     MPI_Type_create_struct(4, blocklengths, displacements, types, &task_type);
     MPI_Type_commit(&task_type);
 
-    double start_time = MPI_Wtime();
+    double total_time = 0.0;
+    int num_runs = 10;
+    double results[10];
 
-    if (mode == 0 && rank == 0)
+    for (int run = 0; run < num_runs; run++)
     {
+        MPI_Barrier(MPI_COMM_WORLD);
+        double start = MPI_Wtime();
 
-        double init_est = (1.0 / 6.0) * (f(0.0) + 4.0 * f(0.5) + f(1.0));
-        double result = adaptive_simpson(f, 0.0, 1.0, tol, init_est);
-        printf("Mode 0 Result: %e \nTime: %f s\n", result, MPI_Wtime() - start_time);
-    }
-    else if (mode == 1)
-    {
-        if (rank == 0)
+        if (mode == 0 && rank == 0)
         {
-            double total_integral = 0.0;
-            int active_workers = 0, workers_finished = 0;
-            Task first = {0.0, 1.0, tol, (1.0 / 6.0) * (f(0.0) + 4.0 * f(0.5) + f(1.0))};
-            push_task(first);
 
-            while (workers_finished < (size - 1))
+            double init_est = (1.0 / 6.0) * (f(0.0) + 4.0 * f(0.5) + f(1.0));
+            double result = adaptive_simpson(f, 0.0, 1.0, tol, init_est);
+        }
+        else if (mode == 1)
+        {
+            if (rank == 0)
             {
-                MPI_Status status;
-                MPI_Probe(MPI_ANY_SOURCE, MPI_ANY_TAG, MPI_COMM_WORLD, &status);
-                int worker_id = status.MPI_SOURCE;
+                double total_integral = 0.0;
+                int active_workers = 0, workers_finished = 0;
+                Task first = {0.0, 1.0, tol, (1.0 / 6.0) * (f(0.0) + 4.0 * f(0.5) + f(1.0))};
+                push_task(first);
 
-                if (status.MPI_TAG == TAG_RESULT)
+                while (workers_finished < (size - 1))
                 {
-                    double res;
-                    MPI_Recv(&res, 1, MPI_DOUBLE, worker_id, TAG_RESULT, MPI_COMM_WORLD, &status);
-                    total_integral += res;
-                    active_workers--;
+                    MPI_Status status;
+                    MPI_Probe(MPI_ANY_SOURCE, MPI_ANY_TAG, MPI_COMM_WORLD, &status);
+                    int worker_id = status.MPI_SOURCE;
+
+                    if (status.MPI_TAG == TAG_RESULT)
+                    {
+                        double res;
+                        MPI_Recv(&res, 1, MPI_DOUBLE, worker_id, TAG_RESULT, MPI_COMM_WORLD, &status);
+                        total_integral += res;
+                        active_workers--;
+                    }
+                    else if (status.MPI_TAG == TAG_NEW_TASK)
+                    {
+                        Task t;
+                        MPI_Recv(&t, 1, task_type, worker_id, TAG_NEW_TASK, MPI_COMM_WORLD, &status);
+                        push_task(t);
+                    }
+                    else if (status.MPI_TAG == TAG_WORK_REQUEST)
+                    {
+                        MPI_Recv(NULL, 0, MPI_INT, worker_id, TAG_WORK_REQUEST, MPI_COMM_WORLD, &status);
+                        if (stack_top >= 0)
+                        {
+                            Task t = pop_task();
+                            MPI_Send(&t, 1, task_type, worker_id, TAG_WORK, MPI_COMM_WORLD);
+                            active_workers++;
+                        }
+                        else if (active_workers == 0)
+                        {
+                            for (int i = 1; i < size; i++)
+                                MPI_Send(NULL, 0, MPI_INT, i, TAG_STOP, MPI_COMM_WORLD);
+                            workers_finished = size - 1;
+                        }
+                    }
                 }
-                else if (status.MPI_TAG == TAG_NEW_TASK)
+            }
+            else
+            {
+                while (1)
                 {
+                    MPI_Send(NULL, 0, MPI_INT, 0, TAG_WORK_REQUEST, MPI_COMM_WORLD);
+                    MPI_Status status;
+                    MPI_Probe(0, MPI_ANY_TAG, MPI_COMM_WORLD, &status);
+                    if (status.MPI_TAG == TAG_STOP)
+                    {
+                        MPI_Recv(NULL, 0, MPI_INT, 0, TAG_STOP, MPI_COMM_WORLD, &status);
+                        break;
+                    }
                     Task t;
-                    MPI_Recv(&t, 1, task_type, worker_id, TAG_NEW_TASK, MPI_COMM_WORLD, &status);
-                    push_task(t);
-                }
-                else if (status.MPI_TAG == TAG_WORK_REQUEST)
-                {
-                    MPI_Recv(NULL, 0, MPI_INT, worker_id, TAG_WORK_REQUEST, MPI_COMM_WORLD, &status);
-                    if (stack_top >= 0)
-                    {
-                        Task t = pop_task();
-                        MPI_Send(&t, 1, task_type, worker_id, TAG_WORK, MPI_COMM_WORLD);
-                        active_workers++;
-                    }
-                    else if (active_workers == 0)
-                    {
-                        for (int i = 1; i < size; i++)
-                            MPI_Send(NULL, 0, MPI_INT, i, TAG_STOP, MPI_COMM_WORLD);
-                        workers_finished = size - 1;
-                    }
+                    MPI_Recv(&t, 1, task_type, 0, TAG_WORK, MPI_COMM_WORLD, &status);
+                    process_task(t, f);
                 }
             }
-            printf("Mode 2 Result: %e \nTime: %f s\n", total_integral, MPI_Wtime() - start_time);
         }
-        else
+        else if (mode == 2)
         {
-            while (1)
-            {
-                MPI_Send(NULL, 0, MPI_INT, 0, TAG_WORK_REQUEST, MPI_COMM_WORLD);
-                MPI_Status status;
-                MPI_Probe(0, MPI_ANY_TAG, MPI_COMM_WORLD, &status);
-                if (status.MPI_TAG == TAG_STOP)
-                {
-                    MPI_Recv(NULL, 0, MPI_INT, 0, TAG_STOP, MPI_COMM_WORLD, &status);
-                    break;
-                }
-                Task t;
-                MPI_Recv(&t, 1, task_type, 0, TAG_WORK, MPI_COMM_WORLD, &status);
-                process_task(t, f);
-            }
-        }
-    }
-    else if (mode == 2)
-    {
-        double local_sum = 0.0, global_sum = 0.0;
+            double local_sum = 0.0, global_sum = 0.0;
 
-        int K = size;
-        double h = 1.0 / K;
-        double a = rank * h;
-        double b = (rank + 1) * h;
-        double init_est = (h / 6.0) * (f(a) + 4.0 * f((a + b) / 2.0) + f(b));
+            int K = size;
+            double h = 1.0 / K;
+            double a = rank * h;
+            double b = (rank + 1) * h;
+
+            double init_est = (h / 6.0) * (f(a) + 4.0 * f((a + b) / 2.0) + f(b));
+
+            double start_parallel = MPI_Wtime();
 
 #pragma omp parallel
-        {
-#pragma omp single
             {
-                local_sum = adaptive_simpson_hybrid(f, a, b, tol / K, init_est);
+#pragma omp single
+                {
+                    local_sum = adaptive_simpson_hybrid(f, a, b, tol / K, init_est);
+                }
             }
+
+            MPI_Reduce(&local_sum, &global_sum, 1, MPI_DOUBLE, MPI_SUM, 0, MPI_COMM_WORLD);
         }
 
-        MPI_Reduce(&local_sum, &global_sum, 1, MPI_DOUBLE, MPI_SUM, 0, MPI_COMM_WORLD);
-
-        if (rank == 0)
+        double end = MPI_Wtime();
+        if (run > 0)
         {
-            printf("Mode 2 Result: %e \nTime: %f s\n", global_sum, MPI_Wtime() - start_time);
+            total_time += (end - start);
         }
+        results[run] = (end - start);
+    }
+
+    if (rank == 0)
+    {
+        printf("Average Time (excluding first): %f s\n", total_time / (num_runs - 1));
     }
 
     MPI_Type_free(&task_type);
